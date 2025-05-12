@@ -30,14 +30,11 @@ defmodule JumpTickets.Ticket.DoneNotifier do
           intercom_conversations: convs
         } = ticket
       ) do
-    Logger.info("DoneNotifier triggered for ticket #{ticket_id}")  # =============================================
-    Logger.info("Slack channel: #{inspect(slack_channel)}")        # === ERROR LOGGING TEMP ===
-    Logger.info("Intercom conversations: #{inspect(convs)}")       # =============================================
-
-
+    Logger.info("DoneNotifier triggered for ticket #{ticket_id}") 
+    Logger.info("Slack channel: #{inspect(slack_channel)}")       
+    Logger.info("Intercom conversations: #{inspect(convs)}")      
 
     slack_message = "Ticket #{ticket_id} has been marked as Done."
-
 
     # =============================================
     # === BEGIN IMPROVED SLACK ERROR HANDLING ===
@@ -85,7 +82,63 @@ defmodule JumpTickets.Ticket.DoneNotifier do
     :ok
   end
 
+  # =============================================
+  # === BEGIN CUSTOM MESSAGE NOTIFICATION ===
+  # =============================================
+  @doc """
+  Sends a custom notification to the ticket's Slack channel and linked Intercom conversations.
+  """
+  def notify_with_custom_message(
+        %{
+          ticket_id: ticket_id,
+          slack_channel: slack_channel,
+          intercom_conversations: convs,
+          message: custom_message
+        }
+      ) do
+    Logger.info("DoneNotifier triggered for ticket #{ticket_id} with custom message")
+    Logger.info("Slack channel: #{inspect(slack_channel)}")
+    Logger.info("Intercom conversations: #{inspect(convs)}")
+
+    # Post to Slack
+    slack_result = post_slack_message(slack_channel, custom_message)
+
+    case slack_result do
+      {:ok, _} -> :ok
+      {:error, reason} -> Logger.error("Failed to notify Slack: #{inspect(reason)}")
+    end
+
+    # Post to each linked Intercom conversation (if available)
+    if convs do
+      intercom_results =
+        convs
+        |> parse_intercom_conversations()
+        |> Enum.map(fn conversation_id ->
+          case Intercom.reply_to_conversation(conversation_id, custom_message) do
+            {:ok, response} -> {:ok, conversation_id, response}
+            {:error, error} -> {:error, conversation_id, error}
+          end
+        end)
+
+      # Log any Intercom errors
+      intercom_results
+      |> Enum.filter(fn 
+        {:error, _, _} -> true
+        _ -> false
+      end)
+      |> Enum.each(fn {:error, conversation_id, err} ->
+        Logger.error("Failed to notify Intercom conversation #{conversation_id}: #{inspect(err)}")
+      end)
+    end
+
+    :ok
+  end
+  # =============================================
+  # === END CUSTOM MESSAGE NOTIFICATION ===
+  # =============================================
+
   defp post_slack_message(nil, _), do: {:error, :no_slack_channel}
+  
   # =============================================
   # === BEGIN IMPROVED SLACK CHANNEL VALIDATION ===
   # =============================================
@@ -125,6 +178,9 @@ defmodule JumpTickets.Ticket.DoneNotifier do
   # === END IMPROVED SLACK CHANNEL VALIDATION ===
   # =============================================
 
+  # =============================================
+  # === BEGIN INTERCOM CONVERSATION PARSING ===
+  # =============================================
   defp parse_intercom_conversations(nil), do: []
 
   defp parse_intercom_conversations(conversations) when is_binary(conversations) do
@@ -135,9 +191,6 @@ defmodule JumpTickets.Ticket.DoneNotifier do
     |> Enum.map(&extract_conversation_id/1)
   end
 
-  # =============================================
-  # === BEGIN IMPROVED INTERCOM URL PARSING ===
-  # =============================================
   defp extract_conversation_id(url) do
     # Assuming conversation URLs are in the format:
     # "https://app.intercom.io/a/apps/APP_ID/conversations/CONVERSATION_ID"
@@ -152,6 +205,6 @@ defmodule JumpTickets.Ticket.DoneNotifier do
     end
   end
   # =============================================
-  # === END IMPROVED INTERCOM URL PARSING ===
+  # === END INTERCOM CONVERSATION PARSING ===
   # =============================================
 end
