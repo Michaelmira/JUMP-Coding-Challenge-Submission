@@ -5,6 +5,34 @@ config :jump_tickets, JumpTickets.Repo,
   database: "sqlite/dev.sqlite",
   stacktrace: true
 
+# ==========================================
+# === BEGIN DNS RESOLUTION FIX SETTINGS ===
+# ==========================================
+# Replace the existing hackney config with this more complete one
+config :hackney, 
+  use_default_pool: false, 
+  inet6: false,
+  ipv6_enabled: false,
+  insecure: true,
+  timeout: 30_000,
+  connect_timeout: 30_000,
+  recv_timeout: 30_000
+
+# Add HTTPoison specific settings
+config :httpoison,
+  hackney: [
+    use_default_pool: false,
+    inet6: false,
+    ipv6_enabled: false,
+    insecure: true,
+    timeout: 30_000,
+    connect_timeout: 30_000,
+    recv_timeout: 30_000
+  ]
+# =========================================
+# === END DNS RESOLUTION FIX SETTINGS ===
+# =========================================
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #

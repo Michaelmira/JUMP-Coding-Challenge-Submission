@@ -1,26 +1,22 @@
 defmodule JumpTicketsWeb.TicketDoneController do
   use JumpTicketsWeb, :controller
-
-  alias JumpTickets.Ticket
-  alias JumpTickets.External.Notion
-  alias JumpTickets.External.Notion.Parser
-  alias JumpTickets.Ticket.DoneNotifier
+  require Logger
 
   @doc """
-  Handles a Notion webhook for when a ticket is marked as Done.
-
-  Expects a JSON payload with the `page_id` key.
+  Simplified controller that just logs and accepts any webhook from Notion
   """
-  def notion_webhook(conn, %{"page_id" => page_id}) do
-    with %Ticket{} = ticket <- Notion.get_ticket_by_page_id(page_id),
-         :ok <- DoneNotifier.notify_ticket_done(ticket) do
-      json(conn, %{status: "ok", message: "Ticket done notification sent."})
+  def notion_webhook(conn, params) do
+    Logger.info("Notion webhook received with params: #{inspect(params)}")
+    
+    # Handle verification challenge
+    if Map.has_key?(params, "challenge") do
+      challenge = params["challenge"]
+      Logger.info("Responding to challenge: #{challenge}")
+      json(conn, %{challenge: challenge})
     else
-      error ->
-        # Log or handle error as needed
-        conn
-        |> put_status(500)
-        |> json(%{status: "error", error: inspect(error)})
+      # Just log everything and return OK
+      Logger.info("Webhook payload: #{inspect(params)}")
+      json(conn, %{status: "ok", message: "Webhook received"})
     end
   end
 end

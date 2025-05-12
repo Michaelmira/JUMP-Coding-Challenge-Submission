@@ -7,9 +7,30 @@
 # General application configuration
 import Config
 
+# ==========================================
+# === BEGIN DNS RESOLUTION FIX SETTINGS ===
+# ==========================================
 config :hackney,
+  use_default_pool: false,
+  ipv6_enabled: false,
+  insecure: true,
   # Receive timeout (in milliseconds)
-  recv_timeout: 30_000
+  recv_timeout: 30_000,
+  connect_timeout: 30_000,
+  timeout: 30_000
+
+config :httpoison, 
+  hackney: [
+    use_default_pool: false,
+    ipv6_enabled: false,
+    insecure: true,
+    timeout: 30_000,
+    connect_timeout: 30_000,
+    recv_timeout: 30_000
+  ]
+# =========================================
+# === END DNS RESOLUTION FIX SETTINGS ===
+# =========================================
 
 config :jump_tickets,
   ecto_repos: [JumpTickets.Repo],

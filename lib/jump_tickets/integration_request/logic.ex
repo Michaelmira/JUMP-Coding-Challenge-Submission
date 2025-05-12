@@ -59,12 +59,16 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     }
   end
 
+  # =============================================
+  # === BEGIN FIXED API CLIENT DEPENDENCIES ===
+  # =============================================
   @doc """
   Runs an integration request through all its steps.
   """
   @spec run(Request.t()) :: Request.t()
   def run(%Request{} = request, opts \\ []) do
-    intercom = Keyword.get(opts, :intercom, JumpTickets.External.Intercom)
+    # Use the fixed implementations for Windows environments
+    intercom = Keyword.get(opts, :intercom, JumpTickets.External.IntercomFixed)
     notion = Keyword.get(opts, :notion, JumpTickets.External.Notion)
     slack = Keyword.get(opts, :slack, JumpTickets.External.Slack)
     llm = Keyword.get(opts, :llm, JumpTickets.External.LLM)
@@ -87,6 +91,9 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     Coordinator.broadcast_update(final_request)
     final_request
   end
+  # ============================================
+  # === END FIXED API CLIENT DEPENDENCIES ===
+  # ============================================
 
   # Private functions
 
@@ -155,9 +162,15 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     end
   end
 
+  # ======================================
+  # === BEGIN FIXED NOTION API CALL ===
+  # ======================================
   defp execute_step(:check_existing_tickets, request, opts) do
-    opts[:notion].query_db()
+    JumpTickets.External.Notion.query_db_fixed()
   end
+  # =====================================
+  # === END FIXED NOTION API CALL ===
+  # =====================================
 
   defp execute_step(
          :ai_analysis,
@@ -179,24 +192,97 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     end
   end
 
-  defp execute_step(
-         :create_or_update_notion_ticket,
-         %{
-           intercom_conversation_url: conversation_url,
-           steps: %{ai_analysis: %{result: {:new, ticket_params}}}
-         },
-         opts
-       ) do
-    ticket = %Ticket{
-      title: ticket_params.title,
-      summary: ticket_params.summary,
-      intercom_conversations: conversation_url
+  # =============================================
+  # === BEGIN FIXED NOTION CREATE TICKET API ===
+  # =============================================
+  @doc """
+  Creates a ticket in Notion with fixed TLS settings.
+  """
+  def create_ticket_fixed(%Ticket{} = ticket) do
+    db_id = Application.get_env(:jump_tickets, :notion_db_id)
+    token = Application.get_env(:notionex, :bearer_token)
+    url = ~c"https://api.notion.com/v1/pages"
+    
+    # Prepare the request body
+    properties = %{
+      "Title" => %{
+        "title" => [%{"text" => %{"content" => ticket.title}}]
+      }
     }
-
-    result = opts[:notion].create_ticket(ticket)
-
-    result
+    
+    # Add additional properties if available
+    properties = if ticket.intercom_conversations do
+      Map.put(properties, "Intercom Conversations", %{
+        "rich_text" => [%{"text" => %{"content" => ticket.intercom_conversations}}]
+      })
+    else
+      properties
+    end
+    
+    # Create the request body
+    body = Jason.encode!(%{
+      "parent" => %{"database_id" => db_id},
+      "properties" => properties,
+      "children" => [
+        %{
+          "object" => "block",
+          "type" => "paragraph",
+          "paragraph" => %{
+            "rich_text" => [
+              %{
+                "type" => "text",
+                "text" => %{
+                  "content" => ticket.summary || ""
+                }
+              }
+            ]
+          }
+        }
+      ]
+    })
+    
+    # Set up headers
+    headers = [
+      {~c"Authorization", ~c"Bearer #{token}"},
+      {~c"Notion-Version", ~c"2022-06-28"},
+      {~c"Content-Type", ~c"application/json"}
+    ]
+    
+    # Configure SSL options
+    http_options = [
+      ssl: [
+        verify: :verify_none,
+        versions: [:'tlsv1.2'],
+        ciphers: :ssl.cipher_suites(:all, :'tlsv1.2'),
+        customize_hostname_check: [
+          match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+        ],
+        depth: 99,
+        cacerts: :public_key.cacerts_get()
+      ],
+      timeout: 60000
+    ]
+    
+    # Make the request
+    case :httpc.request(:post, {url, headers, ~c"application/json", String.to_charlist(body)}, http_options, []) do
+      {:ok, {{_, 200, _}, _, response}} ->
+        response_str = List.to_string(response)
+        page = Jason.decode!(response_str)
+        # Use the fully qualified name for the Parser module
+        ticket = JumpTickets.External.Notion.Parser.parse_ticket_page(page)
+        {:ok, ticket}
+        
+      {:ok, {{_, status, _}, _, response}} ->
+        response_str = List.to_string(response)
+        {:error, "Notion API returned #{status}: #{response_str}"}
+        
+      {:error, reason} ->
+        {:error, "HTTP error: #{inspect(reason)}"}
+    end
   end
+  # ============================================
+  # === END FIXED NOTION CREATE TICKET API ===
+  # ============================================
 
   defp execute_step(
          :create_or_update_notion_ticket,
@@ -227,18 +313,48 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     end
   end
 
+  # =============================================
+  # === BEGIN NEW TICKET CREATION IMPLEMENTATION ===
+  # =============================================
   defp execute_step(
-         :maybe_update_notion_with_slack,
-         %{
-           steps: %{
-             create_or_update_notion_ticket: %{result: %Ticket{notion_id: notion_id}},
-             maybe_create_slack_channel: %{result: %{url: slack_url}}
-           }
-         },
-         opts
-       ) do
-    opts[:notion].update_ticket(notion_id, %{slack_channel: slack_url})
+        :create_or_update_notion_ticket,
+        %{
+          intercom_conversation_url: conversation_url,
+          steps: %{ai_analysis: %{result: {:new, new_ticket_data}}}
+        },
+        opts
+      ) do
+    ticket = %JumpTickets.Ticket{
+      title: new_ticket_data.title,
+      summary: new_ticket_data.summary,
+      intercom_conversations: conversation_url
+    }
+    
+    # Use the fixed implementation for creating tickets
+    create_ticket_fixed(ticket)
   end
+  # ============================================
+  # === END NEW TICKET CREATION IMPLEMENTATION ===
+  # ============================================
+
+  # =============================================
+  # === BEGIN FIXED NOTION UPDATE WITH SLACK ===
+  # =============================================
+  defp execute_step(
+        :maybe_update_notion_with_slack,
+        %{
+          steps: %{
+            create_or_update_notion_ticket: %{result: %Ticket{notion_id: notion_id}},
+            maybe_create_slack_channel: %{result: %{url: slack_url}}
+          }
+        },
+        _opts  # Note: We're ignoring opts here since we're using our fixed function directly
+      ) do
+    JumpTickets.External.Notion.update_ticket_fixed(notion_id, %{slack_channel: slack_url})
+  end
+  # ============================================
+  # === END FIXED NOTION UPDATE WITH SLACK ===
+  # ============================================
 
   defp execute_step(
          :maybe_create_slack_channel,
@@ -284,7 +400,7 @@ defmodule JumpTickets.IntegrationRequest.Logic do
          },
          opts
        ) do
-    with {:ok, admins} <- opts[:intercom].get_participating_admins(conversation_id),
+    with {:ok, admins} <- JumpTickets.External.IntercomFixed.get_participating_admins_fixed(conversation_id),
          {:ok, slack_users} <-
            opts[:slack].get_all_users(),
          {:ok, existing_channel_members} <-
@@ -317,7 +433,7 @@ defmodule JumpTickets.IntegrationRequest.Logic do
          },
          opts
        ) do
-    with {:ok, admins} <- opts[:intercom].get_participating_admins(conversation_id),
+    with {:ok, admins} <- JumpTickets.External.IntercomFixed.get_participating_admins_fixed(conversation_id),
          {:ok, slack_users} <-
            opts[:slack].get_all_users(),
          slack_user_ids <- UserMatcher.match_users(admins, slack_users),
@@ -328,9 +444,16 @@ defmodule JumpTickets.IntegrationRequest.Logic do
     end
   end
 
-  defp execute_step(_, _, _) do
+  # ============================================
+  # === BEGIN IMPROVED ERROR LOGGING ===
+  # ============================================
+  defp execute_step(step_type, request, _) do
+    Logger.error("Missing implementation for step #{inspect(step_type)} with request: #{inspect(request)}")
     {:error, :missing_implementation}
   end
+  # ============================================
+  # === END IMPROVED ERROR LOGGING ===
+  # ============================================
 
   defp mark_as_running(request) do
     %{request | status: :running, updated_at: DateTime.utc_now()}

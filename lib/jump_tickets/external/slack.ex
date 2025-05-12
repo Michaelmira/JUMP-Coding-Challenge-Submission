@@ -134,7 +134,8 @@ defmodule JumpTickets.External.Slack do
     end
   end
 
-  def post_message("" <> _, text), do: nil
+  def post_message("", _), do: {:error, :empty_channel_id}
+  def post_message(nil, _), do: {:error, :nil_channel_id}
 
   @doc """
   Posts a message to a channel

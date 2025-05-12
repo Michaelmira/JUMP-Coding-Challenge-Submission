@@ -38,8 +38,36 @@ config :jump_tickets,
 
 config :jump_tickets, :intercom, admin_id: System.get_env("INTERCOM_ADMIN_ID")
 
+
+# ==========================================
+# === BEGIN DNS RESOLUTION FIX SETTINGS ===
+# ==========================================
+# Ensure proper configuration for notionex
 config :notionex,
-  bearer_token: System.get_env("NOTION_SECRET")
+  bearer_token: System.get_env("NOTION_SECRET"),
+  version: "2022-06-28"  # Add version parameter
+
+# Configure HTTPoison and Hackney for proper DNS resolution
+config :hackney,
+  use_default_pool: false,
+  ipv6_enabled: false,
+  insecure: true,
+  timeout: 30_000,
+  connect_timeout: 30_000,
+  recv_timeout: 30_000
+
+config :httpoison,
+  hackney: [
+    use_default_pool: false,
+    ipv6_enabled: false,
+    insecure: true,
+    timeout: 30_000,
+    connect_timeout: 30_000,
+    recv_timeout: 30_000
+  ]
+# =========================================
+# === END DNS RESOLUTION FIX SETTINGS ===
+# =========================================
 
 config :jump_tickets, :slack, bot_token: System.get_env("SLACK_BOT_TOKEN")
 

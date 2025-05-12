@@ -7,6 +7,12 @@ defmodule JumpTickets.Application do
 
   @impl true
   def start(_type, _args) do
+
+    IO.puts("Notion Secret available: #{!!System.get_env("NOTION_SECRET")}")
+    IO.puts("Notion DB ID available: #{!!System.get_env("NOTION_DB_ID")}")
+    JumpTickets.External.NotionClientPatch.patch_notion_client()
+
+
     children = [
       JumpTicketsWeb.Telemetry,
       JumpTickets.Repo,

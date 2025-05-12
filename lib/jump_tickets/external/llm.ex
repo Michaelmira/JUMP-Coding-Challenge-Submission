@@ -73,6 +73,53 @@ defmodule JumpTickets.External.LLM do
         {:error, reason}
     end
   end
+  
+  # =============================================
+  # === BEGIN INTERCOM API RESPONSE HANDLER ===
+  # =============================================
+  @doc """
+  Formats a conversation from the Intercom API into a string suitable for Claude's analysis
+  """
+  def format_conversation(conversation) when is_map(conversation) and map_size(conversation) > 0 and not is_map_key(conversation, :messages) do
+    # Extract conversation parts from the Intercom API response
+    conversation_parts = get_in(conversation, ["conversation_parts", "conversation_parts"]) || []
+    
+    # Format the conversation parts
+    messages = 
+      conversation_parts
+      |> Enum.map(fn part ->
+        author_type = get_author_type(part["author"])
+        author_name = get_author_name(part["author"])
+        body = part["body"]
+        
+        if is_binary(body) do
+          # Remove HTML tags
+          cleaned_body = String.replace(body, ~r/<\/?[^>]*>/, "")
+          "#{author_type} (#{author_name}): #{cleaned_body}"
+        else
+          nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join("\n\n")
+    
+    # Include the initial message if available
+    initial_message = 
+      if is_map(conversation["source"]) and is_binary(conversation["source"]["body"]) do
+        author_type = get_author_type(conversation["source"]["author"])
+        author_name = get_author_name(conversation["source"]["author"])
+        body = String.replace(conversation["source"]["body"], ~r/<\/?[^>]*>/, "")
+        
+        "#{author_type} (#{author_name}): #{body}\n\n#{messages}"
+      else
+        messages
+      end
+      
+    initial_message
+  end
+  # ============================================
+  # === END INTERCOM API RESPONSE HANDLER ===
+  # ============================================
 
   @doc """
   Formats a conversation into a string suitable for Claude's analysis
@@ -279,4 +326,25 @@ defmodule JumpTickets.External.LLM do
 
   defp maybe_add_field(map, _key, nil), do: map
   defp maybe_add_field(map, key, [_, value]), do: Map.put(map, key, value)
+
+  # ================================================
+  # === BEGIN INTERCOM API HELPER FUNCTIONS ===
+  # ================================================
+  # Helper functions for the Intercom API response handler
+  defp get_author_type(author) when is_map(author) do
+    case author["type"] do
+      "admin" -> "Agent"
+      "bot" -> "Bot" 
+      _ -> "Customer"
+    end
+  end
+
+  defp get_author_name(author) when is_map(author) do
+    author["name"] || author["email"] || "Unknown"
+  end
+  # ===============================================
+  # === END INTERCOM API HELPER FUNCTIONS ===
+  # ===============================================
+
+
 end
