@@ -2,6 +2,8 @@ defmodule JumpTicketsWeb.TicketDoneController do
   use JumpTicketsWeb, :controller
   require Logger
 
+  @notion_done_secret System.get_env("NOTION_DONE_SECRET")
+
   alias JumpTickets.External.Slack
 
   @doc """

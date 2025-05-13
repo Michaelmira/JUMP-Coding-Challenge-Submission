@@ -3,7 +3,6 @@ defmodule JumpTickets.Ticket.DoneNotifier do
   Notifies related channels and conversations when a ticket is marked as Done.
   """
 
-
   # =============================================
   # === BEGIN IMPROVED ERROR LOGGING ===
   # =============================================
